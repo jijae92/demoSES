@@ -1,0 +1,14 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "PaperWatcherStack"
+resolve_s3 = true
+s3_prefix = "PaperWatcherStack"
+confirm_changeset = true
+capabilities = "CAPABILITY_IAM"
+disable_rollback = true
+parameter_overrides = "TableName=\"paper_seen\" SesSecretName=\"paperwatcher/ses\" ApiSecretName=\"paperwatcher/api\" ScheduleExpression=\"cron(0 9 * * ? *)\" UseSmtp=\"false\""
+image_repositories = []
+
+[default.global.parameters]
+region = "ap-northeast-2"

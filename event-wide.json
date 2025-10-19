@@ -1,0 +1,7 @@
+{
+  "keywords": "parp, isg, interferon, sting",
+  "match_mode": "OR",
+  "window_hours": 168,
+  "sources": ["crossref","pubmed","rss"],
+  "dry_run": false
+}

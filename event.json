@@ -1,0 +1,10 @@
+{
+  "keywords": "review, interferon",
+  "match_mode": "OR",
+  "window_hours": 2880,
+  "sources": [
+    "rss"
+  ],
+  "dry_run": false,
+  "force_send_summary": true
+}
