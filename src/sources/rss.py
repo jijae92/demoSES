@@ -78,21 +78,34 @@ def fetch_rss(
     keywords: Sequence[str],
     match_mode: str,
     window_start_dt: datetime,
+    window_end_dt: datetime,
     user_agent: str,
 ) -> List[PaperItem]:
     """Fetch feed entries from RSS sources."""
     headers = {"User-Agent": user_agent}
     items: List[PaperItem] = []
+    downloaded = 0
+    parsed_ok = 0
+
+    LOGGER.info(
+        "RSS request: from=%s until=%s feeds=%d",
+        window_start_dt.date().isoformat(),
+        window_end_dt.date().isoformat(),
+        len(FEEDS),
+    )
 
     for journal, url in FEEDS.items():
         try:
             payload = _download_feed(url, headers)
+            downloaded += 1
         except RetryError:
             LOGGER.exception("Failed to download RSS feed for %s", journal)
             continue
         feed = feedparser.parse(payload)
         if feed.bozo:
             LOGGER.warning("RSS parsing issue for %s: %s", journal, getattr(feed, "bozo_exception", "unknown"))
+        else:
+            parsed_ok += 1
         for entry in feed.entries:
             published = _parse_date(entry)
             if published and published < window_start_dt:
@@ -125,4 +138,11 @@ def fetch_rss(
                     matched_keywords=matched,
                 )
             )
+    LOGGER.info(
+        "RSS summary: feeds=%d downloaded=%d parsed=%d matched=%d",
+        len(FEEDS),
+        downloaded,
+        parsed_ok,
+        len(items),
+    )
     return items

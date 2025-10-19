@@ -21,24 +21,21 @@ Parameters:
     Description: EventBridge schedule expression in UTC
   UseSmtp:
     Type: String
-    AllowedValues:
-      - true
-      - false
-    Default: false
+    AllowedValues: ["true","false"]
+    Default: "false"
     Description: Set to true to use SMTP instead of the SES API
 
 Globals:
   Function:
     Runtime: python3.11
     Timeout: 60
-    Handler: src/handler.lambda_handler
+    Handler: handler.lambda_handler
     MemorySize: 512
-    Architectures:
-      - x86_64
+    Architectures: [x86_64]
     Environment:
       Variables:
-        KEYWORDS: "zero trust, federated learning"
-        MATCH_MODE: OR
+        KEYWORDS: "parp, isg, interferon, sting"
+        MATCH_MODE: "OR"
         WINDOW_HOURS: "24"
         SOURCES: "crossref,pubmed,rss"
         APP_NAME: paper-watcher
@@ -46,33 +43,33 @@ Globals:
         SES_SECRET_NAME: !Ref SesSecretName
         API_SECRET_NAME: !Ref ApiSecretName
         USE_SMTP: !Ref UseSmtp
-    Policies:
-      - AWSLambdaBasicExecutionRole
-      - Statement:
-          - Effect: Allow
-            Action:
-              - dynamodb:GetItem
-              - dynamodb:PutItem
-              - dynamodb:BatchWriteItem
-            Resource: !GetAtt PaperSeenTable.Arn
-          - Effect: Allow
-            Action:
-              - secretsmanager:GetSecretValue
-            Resource:
-              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SesSecretName}*
-              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ApiSecretName}*
-          - Effect: Allow
-            Action:
-              - ses:SendEmail
-              - ses:SendRawEmail
-            Resource: '*'
 
 Resources:
   PaperWatcherFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: .
+      CodeUri: src/
       Description: Lambda that fetches papers and sends SES notifications
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:BatchWriteItem
+              Resource: !GetAtt PaperSeenTable.Arn
+            - Effect: Allow
+              Action: [secretsmanager:GetSecretValue]
+              Resource:
+                - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SesSecretName}*
+                - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ApiSecretName}*
+            - Effect: Allow
+              Action:
+                - ses:SendEmail
+                - ses:SendRawEmail
+              Resource: "*"
       Events:
         DailySchedule:
           Type: Schedule

@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Sequence
+from typing import Any, Sequence
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -19,6 +19,7 @@ class SeenRepository:
     """Repository abstraction for the DynamoDB table."""
 
     table_name: str
+    _client: Any = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._client = boto3.client("dynamodb")

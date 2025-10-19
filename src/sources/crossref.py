@@ -87,11 +87,10 @@ def _collect_authors(message: Dict[str, object]) -> List[str]:
     return authors
 
 
-def _build_query(keywords: Sequence[str], match_mode: str) -> str | None:
+def _build_query(keywords: Sequence[str]) -> str | None:
     if not keywords:
         return None
-    connector = " AND " if match_mode.upper() == "AND" else " OR "
-    return connector.join(f'"{keyword}"' for keyword in keywords)
+    return " ".join(keyword for keyword in keywords)
 
 
 @retry(
@@ -100,7 +99,7 @@ def _build_query(keywords: Sequence[str], match_mode: str) -> str | None:
     stop=stop_after_attempt(5),
     reraise=True,
 )
-def _perform_request(session: requests.Session, params: Dict[str, str]) -> Dict[str, object]:
+def _perform_request(session: requests.Session, params: Dict[str, str]) -> requests.Response:
     response = session.get(CROSSREF_URL, params=params, timeout=DEFAULT_TIMEOUT)
     if response.status_code == 429:
         retry_after = response.headers.get("Retry-After")
@@ -109,43 +108,74 @@ def _perform_request(session: requests.Session, params: Dict[str, str]) -> Dict[
         time.sleep(delay)
         raise RateLimitError("Crossref rate limited")
     response.raise_for_status()
-    return response.json()
+    return response
 
 
 def fetch_crossref(
     keywords: Sequence[str],
     match_mode: str,
     window_start_dt: datetime,
+    window_end_dt: datetime,
     user_agent: str,
+    contact_email: str | None,
 ) -> List[PaperItem]:
     """Fetch papers from Crossref honoring the configured filters."""
     session = requests.Session()
-    session.headers.update({"Accept": "application/json", "User-Agent": user_agent})
+    if contact_email:
+        header_agent = f"PaperWatcher/1.0 (mailto:{contact_email})"
+    else:
+        header_agent = user_agent
+    session.headers.update({"Accept": "application/json", "User-Agent": header_agent})
 
-    window_iso = window_start_dt.date().isoformat()
-    keyword_query = _build_query(keywords, match_mode)
+    start_date = window_start_dt.date().isoformat()
+    end_date = window_end_dt.date().isoformat()
+    keyword_query = _build_query(keywords)
     items: List[PaperItem] = []
 
     for journal in JOURNALS:
         params = {
-            "filter": f"container-title:{journal},from-pub-date:{window_iso},from-index-date:{window_iso}",
-            "rows": "100",
+            "filter": ",".join(
+                [
+                    f"container-title:{journal}",
+                    f"from-pub-date:{start_date}",
+                    f"until-pub-date:{end_date}",
+                ]
+            ),
+            "rows": "200",
             "sort": "published",
             "order": "desc",
+            "select": "DOI,title,container-title,author,issued,URL,type,subject,abstract",
         }
         if keyword_query:
             params["query"] = keyword_query
+        if contact_email:
+            params["mailto"] = contact_email
+        LOGGER.info(
+            "CROSSREF request: journal=%s from=%s until=%s query=\"%s\" rows=%s",
+            journal,
+            start_date,
+            end_date,
+            keyword_query or "",
+            params["rows"],
+        )
         try:
-            payload = _perform_request(session, params)
+            response = _perform_request(session, params)
         except RetryError:
             LOGGER.exception("Failed to fetch Crossref data for %s", journal)
             continue
+        payload = response.json()
         message = payload.get("message") if isinstance(payload, dict) else None
         records = message.get("items") if isinstance(message, dict) else None
         if not isinstance(records, list):
             LOGGER.warning("Crossref returned unexpected payload for %s", journal)
             continue
-        LOGGER.info("Crossref returned %d records for %s", len(records), journal)
+        total_results = message.get("total-results") if isinstance(message, dict) else "?"
+        LOGGER.info(
+            "CROSSREF response: status=%s total=%s returned=%d",
+            response.status_code,
+            total_results,
+            len(records),
+        )
         for record in records:
             if not isinstance(record, dict):
                 continue

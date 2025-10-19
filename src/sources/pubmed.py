@@ -17,15 +17,15 @@ LOGGER = logging.getLogger(__name__)
 ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 DEFAULT_TIMEOUT = 10
-MAX_BATCH = 100
+MAX_BATCH = 200
 JOURNAL_QUERY = '"Nature"[Journal] OR "Cell"[Journal] OR "Science"[Journal]'
 
 
 def _build_keyword_query(keywords: Sequence[str], match_mode: str) -> str | None:
     if not keywords:
         return None
+    fragments = [f"({keyword}[All Fields])" for keyword in keywords]
     connector = " AND " if match_mode.upper() == "AND" else " OR "
-    fragments = [f'"{keyword}"[Title/Abstract]' for keyword in keywords]
     return connector.join(fragments)
 
 
@@ -45,6 +45,7 @@ def fetch_pubmed(
     keywords: Sequence[str],
     match_mode: str,
     window_start_dt: datetime,
+    window_end_dt: datetime,
     user_agent: str,
     api_key: str | None,
 ) -> List[PaperItem]:
@@ -59,7 +60,7 @@ def fetch_pubmed(
         params_base["api_key"] = api_key
     keyword_query = _build_keyword_query(keywords, match_mode)
     window_start_date = window_start_dt.strftime("%Y/%m/%d")
-    window_end_date = datetime.now(timezone.utc).strftime("%Y/%m/%d")
+    window_end_date = window_end_dt.strftime("%Y/%m/%d")
 
     items: List[PaperItem] = []
     term_components = [JOURNAL_QUERY]
@@ -70,10 +71,17 @@ def fetch_pubmed(
     params = {
         **params_base,
         "term": term,
-        "datetype": "edat",
+        "datetype": "pubdate",
         "mindate": window_start_date,
         "maxdate": window_end_date,
     }
+    LOGGER.info(
+        "PUBMED request: term=%s mindate=%s maxdate=%s retmax=%s",
+        term,
+        window_start_date,
+        window_end_date,
+        params["retmax"],
+    )
     try:
         response = _perform_request(ESEARCH_URL, params, headers)
     except RetryError:
@@ -85,8 +93,18 @@ def fetch_pubmed(
         time.sleep(0.34)
     data = response.json()
     id_list = data.get("esearchresult", {}).get("idlist", [])
-    LOGGER.info("PubMed returned %d ids", len(id_list))
+    LOGGER.info(
+        "PUBMED response: status=%s ids=%d",
+        response.status_code,
+        len(id_list),
+    )
     if not id_list:
+        LOGGER.info(
+            "PUBMED zero results: term=%s mindate=%s maxdate=%s",
+            term,
+            window_start_date,
+            window_end_date,
+        )
         return items
 
     for batch_start in range(0, len(id_list), MAX_BATCH):

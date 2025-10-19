@@ -5,8 +5,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass
-from functools import cached_property
-from typing import Any, Dict, List, Sequence
+from typing import Any, Dict, Sequence
 
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
@@ -31,6 +30,8 @@ class SesSecrets:
     sender: str
     recipients: Sequence[str]
     region: str
+    reply_to: Sequence[str] = ()
+    subject_prefix: str | None = None
     smtp_user: str | None = None
     smtp_pass: str | None = None
     host: str | None = None
@@ -54,12 +55,12 @@ class AppConfig:
     api_secrets: ApiSecrets
     ses_secrets: SesSecrets
 
-    @cached_property
+    @property
     def user_agent(self) -> str:
         """Return the composed User-Agent string for outbound requests."""
         base = self.app_name
         if self.api_secrets.user_agent_email:
-            return f"{base} ({self.api_secrets.user_agent_email})"
+            return f"{base} (mailto:{self.api_secrets.user_agent_email})"
         return base
 
 
@@ -142,6 +143,16 @@ class ConfigLoader:
             raise ValueError("SES secret must include 'recipients' list of strings")
         if not region or not isinstance(region, str):
             raise ValueError("SES secret must include 'region' string")
+        reply_to_raw = payload.get("reply_to")
+        if reply_to_raw is None:
+            reply_to: Sequence[str] = ()
+        elif isinstance(reply_to_raw, list) and all(isinstance(item, str) for item in reply_to_raw):
+            reply_to = tuple(reply_to_raw)
+        else:
+            raise ValueError("SES secret 'reply_to' must be a list of strings if provided")
+        subject_prefix = payload.get("subject_prefix")
+        if subject_prefix is not None and not isinstance(subject_prefix, str):
+            raise ValueError("SES secret 'subject_prefix' must be a string if provided")
         smtp_user = payload.get("smtp_user")
         smtp_pass = payload.get("smtp_pass")
         host = payload.get("host")
@@ -149,8 +160,10 @@ class ConfigLoader:
         port = int(port_value) if isinstance(port_value, int) or (isinstance(port_value, str) and port_value.isdigit()) else None
         return SesSecrets(
             sender=sender,
-            recipients=recipients,
+            recipients=tuple(recipients),
             region=region,
+            reply_to=reply_to,
+            subject_prefix=subject_prefix,
             smtp_user=smtp_user,
             smtp_pass=smtp_pass,
             host=host,
