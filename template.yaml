@@ -1,0 +1,104 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Paper watcher serverless pipeline
+
+Parameters:
+  TableName:
+    Type: String
+    Default: paper_seen
+    Description: DynamoDB table name for tracking seen papers
+  SesSecretName:
+    Type: String
+    Default: paperwatcher/ses
+    Description: Secrets Manager secret containing SES configuration
+  ApiSecretName:
+    Type: String
+    Default: paperwatcher/api
+    Description: Secrets Manager secret containing API configuration
+  ScheduleExpression:
+    Type: String
+    Default: cron(0 9 * * ? *)
+    Description: EventBridge schedule expression in UTC
+  UseSmtp:
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: false
+    Description: Set to true to use SMTP instead of the SES API
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 60
+    Handler: src/handler.lambda_handler
+    MemorySize: 512
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        KEYWORDS: "zero trust, federated learning"
+        MATCH_MODE: OR
+        WINDOW_HOURS: "24"
+        SOURCES: "crossref,pubmed,rss"
+        APP_NAME: paper-watcher
+        DDB_TABLE: !Ref TableName
+        SES_SECRET_NAME: !Ref SesSecretName
+        API_SECRET_NAME: !Ref ApiSecretName
+        USE_SMTP: !Ref UseSmtp
+    Policies:
+      - AWSLambdaBasicExecutionRole
+      - Statement:
+          - Effect: Allow
+            Action:
+              - dynamodb:GetItem
+              - dynamodb:PutItem
+              - dynamodb:BatchWriteItem
+            Resource: !GetAtt PaperSeenTable.Arn
+          - Effect: Allow
+            Action:
+              - secretsmanager:GetSecretValue
+            Resource:
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${SesSecretName}*
+              - !Sub arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${ApiSecretName}*
+          - Effect: Allow
+            Action:
+              - ses:SendEmail
+              - ses:SendRawEmail
+            Resource: '*'
+
+Resources:
+  PaperWatcherFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: .
+      Description: Lambda that fetches papers and sends SES notifications
+      Events:
+        DailySchedule:
+          Type: Schedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+            Name: paper-watcher-schedule
+            Description: Daily trigger for paper watcher Lambda
+            RetryPolicy:
+              MaximumRetryAttempts: 0
+
+  PaperSeenTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Ref TableName
+      AttributeDefinitions:
+        - AttributeName: paper_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: paper_id
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+Outputs:
+  FunctionArn:
+    Description: ARN of the paper watcher Lambda function
+    Value: !GetAtt PaperWatcherFunction.Arn
+  TableNameOutput:
+    Description: Name of the DynamoDB table storing seen papers
+    Value: !Ref PaperSeenTable
