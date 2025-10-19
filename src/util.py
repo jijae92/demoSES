@@ -49,16 +49,6 @@ def parse_keywords(raw: str) -> List[str]:
     return [kw for kw in keywords if kw]
 
 
-def keywords_in_text(text: str, keywords: Sequence[str], mode: str) -> bool:
-    """Evaluate keyword containment according to the configured match mode."""
-    if not keywords:
-        return True
-    haystack = text.lower()
-    if mode.upper() == "AND":
-        return all(keyword in haystack for keyword in keywords)
-    return any(keyword in haystack for keyword in keywords)
-
-
 def highlight_text(text: str, keywords: Sequence[str]) -> str:
     """Wrap matched keywords with square brackets for emphasis."""
     if not text or not keywords:

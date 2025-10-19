@@ -35,6 +35,7 @@ def _render_body(
         f"검색 기간: {window_start.isoformat()} ~ {window_end.isoformat()}",
         f"검색 소스: {', '.join(summary.get('sources', []))}",
         f"매치 모드: {summary.get('match_mode')} | 키워드 {len(summary.get('keywords', []))}개",
+        "키워드 매칭 기준: title/abstract contains",
         "",
     ]
     if total:
@@ -80,10 +81,11 @@ def _render_body(
         f"- New counts: {new_counts_line}" if new_counts_line else "- New counts: 없음"
     )
     lines.append(
-        "- Filter stats: total={total} matched={matched} deduped={unique}".format(
-            total=filter_stats.get("total", 0),
-            matched=filter_stats.get("matched", 0),
-            unique=filter_stats.get("unique", 0),
+        "- Filter stats: post_fetch={post_fetch} post_keyword={post_keyword} post_dedup={post_dedup} post_seen={post_seen}".format(
+            post_fetch=filter_stats.get("post_fetch", filter_stats.get("total", 0)),
+            post_keyword=filter_stats.get("post_keyword", filter_stats.get("matched", 0)),
+            post_dedup=filter_stats.get("post_dedup", filter_stats.get("unique", 0)),
+            post_seen=filter_stats.get("post_seen", 0),
         )
     )
     return "\n".join(lines)

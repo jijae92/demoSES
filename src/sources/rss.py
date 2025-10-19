@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Dict, List, Sequence
 
@@ -9,7 +10,8 @@ import feedparser
 import requests
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from util import PaperItem, build_matcher_text, highlight_text, keywords_in_text
+from pipeline.filtering import keyword_match
+from util import PaperItem
 
 LOGGER = logging.getLogger(__name__)
 
@@ -19,6 +21,8 @@ FEEDS = {
     "Science": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
 }
 DEFAULT_TIMEOUT = 10
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
 
 
 def _parse_date(entry: feedparser.FeedParserDict) -> datetime | None:
@@ -62,6 +66,12 @@ def _maybe_extract_doi(identifier: str) -> str | None:
     return None
 
 
+def _strip_html(value: str | None) -> str | None:
+    if value is None:
+        return None
+    return _HTML_TAG_RE.sub(" ", value)
+
+
 @retry(
     retry=retry_if_exception_type(requests.RequestException),
     wait=wait_exponential(multiplier=1, min=1, max=30),
@@ -86,6 +96,10 @@ def fetch_rss(
     items: List[PaperItem] = []
     downloaded = 0
     parsed_ok = 0
+    feed_success = 0
+    feed_failures = 0
+    total_entries = 0
+    matched_entries = 0
 
     LOGGER.info(
         "RSS request: from=%s until=%s feeds=%d",
@@ -99,6 +113,7 @@ def fetch_rss(
             payload = _download_feed(url, headers)
             downloaded += 1
         except RetryError:
+            feed_failures += 1
             LOGGER.exception("Failed to download RSS feed for %s", journal)
             continue
         feed = feedparser.parse(payload)
@@ -106,7 +121,12 @@ def fetch_rss(
             LOGGER.warning("RSS parsing issue for %s: %s", journal, getattr(feed, "bozo_exception", "unknown"))
         else:
             parsed_ok += 1
-        for entry in feed.entries:
+            feed_success += 1
+        feed_entries = getattr(feed, "entries", [])
+        feed_total = len(feed_entries) if isinstance(feed_entries, list) else 0
+        feed_matched = 0
+        total_entries += feed_total
+        for entry in feed_entries or []:
             published = _parse_date(entry)
             if published and published < window_start_dt:
                 continue
@@ -118,31 +138,42 @@ def fetch_rss(
             title = entry.get("title")
             if not isinstance(title, str):
                 continue
-            summary = entry.get("summary") if isinstance(entry.get("summary"), str) else None
-            text_to_match = build_matcher_text([title, summary or ""])
-            text_lower = text_to_match.lower()
-            if not keywords_in_text(text_lower, keywords, match_mode):
+            summary_raw = entry.get("summary") if isinstance(entry.get("summary"), str) else None
+            summary = _strip_html(summary_raw)
+            matched, matched_terms = keyword_match(title, summary, keywords, match_mode)
+            if not matched:
                 continue
-            matched = [kw for kw in keywords if kw in text_lower]
+            feed_matched += 1
+            matched_entries += 1
             authors = _extract_authors(entry)
             items.append(
                 PaperItem(
                     source="rss",
                     paper_id=doi.lower() if doi else identifier,
-                    title=highlight_text(title, keywords),
+                    title=title,
                     authors=authors,
                     published=published,
                     url=url_value,
                     journal=journal,
-                    summary=highlight_text(summary, keywords) if summary else None,
-                    matched_keywords=matched,
+                    summary=summary,
+                    matched_keywords=matched_terms,
                 )
             )
+        LOGGER.info(
+            "RSS feed processed: journal=%s entries=%d matched=%d",
+            journal,
+            feed_total,
+            feed_matched,
+        )
+
     LOGGER.info(
-        "RSS summary: feeds=%d downloaded=%d parsed=%d matched=%d",
+        "RSS summary: feeds=%d downloaded=%d parsed=%d success=%d failure=%d pre_filter=%d post_filter=%d",
         len(FEEDS),
         downloaded,
         parsed_ok,
-        len(items),
+        feed_success,
+        feed_failures,
+        total_entries,
+        matched_entries,
     )
     return items

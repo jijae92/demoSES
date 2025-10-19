@@ -9,7 +9,8 @@ from typing import Dict, List, Sequence
 import requests
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from util import PaperItem, build_matcher_text, highlight_text, keywords_in_text
+from pipeline.filtering import keyword_match
+from util import PaperItem
 
 LOGGER = logging.getLogger(__name__)
 
@@ -88,9 +89,21 @@ def _collect_authors(message: Dict[str, object]) -> List[str]:
 
 
 def _build_query(keywords: Sequence[str]) -> str | None:
-    if not keywords:
+    tokens: List[str] = []
+    for keyword in keywords:
+        if not keyword:
+            continue
+        candidate = keyword.strip().lower()
+        if not candidate:
+            continue
+        if candidate.startswith('"') and candidate.endswith('"') and len(candidate) > 1:
+            candidate = candidate[1:-1]
+        candidate = candidate.strip()
+        if candidate:
+            tokens.append(candidate)
+    if not tokens:
         return None
-    return " ".join(keyword for keyword in keywords)
+    return " ".join(tokens)
 
 
 @retry(
@@ -109,6 +122,16 @@ def _perform_request(session: requests.Session, params: Dict[str, str]) -> reque
         raise RateLimitError("Crossref rate limited")
     response.raise_for_status()
     return response
+
+
+def _mask_params(params: Dict[str, str]) -> Dict[str, str]:
+    masked: Dict[str, str] = {}
+    for key, value in params.items():
+        if key in {"mailto"}:
+            masked[key] = "***"
+        else:
+            masked[key] = value
+    return masked
 
 
 def fetch_crossref(
@@ -133,6 +156,7 @@ def fetch_crossref(
     items: List[PaperItem] = []
 
     for journal in JOURNALS:
+        matched_count = 0
         params = {
             "filter": ",".join(
                 [
@@ -144,19 +168,22 @@ def fetch_crossref(
             "rows": "200",
             "sort": "published",
             "order": "desc",
-            "select": "DOI,title,container-title,author,issued,URL,type,subject,abstract",
+            "select": "DOI,title,abstract,container-title,issued,URL,type,subject,author",
         }
         if keyword_query:
-            params["query"] = keyword_query
+            params["query.title"] = keyword_query
+            if match_mode.upper() == "AND":
+                params["query"] = keyword_query
         if contact_email:
             params["mailto"] = contact_email
         LOGGER.info(
-            "CROSSREF request: journal=%s from=%s until=%s query=\"%s\" rows=%s",
+            "CROSSREF request: journal=%s window=%s~%s mode=%s keywords=%s params=%s",
             journal,
             start_date,
             end_date,
-            keyword_query or "",
-            params["rows"],
+            match_mode.upper(),
+            list(keywords),
+            _mask_params(params),
         )
         try:
             response = _perform_request(session, params)
@@ -170,11 +197,15 @@ def fetch_crossref(
             LOGGER.warning("Crossref returned unexpected payload for %s", journal)
             continue
         total_results = message.get("total-results") if isinstance(message, dict) else "?"
+        safe_url = response.url
+        if safe_url and contact_email:
+            safe_url = safe_url.replace(contact_email, "***")
         LOGGER.info(
-            "CROSSREF response: status=%s total=%s returned=%d",
+            "CROSSREF response: status=%s total=%s returned=%d url=%s",
             response.status_code,
             total_results,
             len(records),
+            safe_url,
         )
         for record in records:
             if not isinstance(record, dict):
@@ -193,22 +224,29 @@ def fetch_crossref(
             abstract = _cleanup_abstract(abstract_raw)
             authors = _collect_authors(record)
             url = record.get("URL") if isinstance(record.get("URL"), str) else f"https://doi.org/{doi}"
-            text_to_match = build_matcher_text([title, abstract or ""])
-            text_lower = text_to_match.lower()
-            if not keywords_in_text(text_lower, keywords, match_mode):
+            matched, matched_terms = keyword_match(title, abstract, keywords, match_mode)
+            if not matched:
                 continue
-            matched = [kw for kw in keywords if kw in text_lower]
+            matched_count += 1
             items.append(
                 PaperItem(
                     source="crossref",
                     paper_id=doi.lower(),
-                    title=highlight_text(title, keywords),
+                    title=title,
                     authors=authors,
                     published=published,
                     url=url,
                     journal=journal,
-                    summary=highlight_text(abstract, keywords) if abstract else None,
-                    matched_keywords=matched,
+                    summary=abstract,
+                    matched_keywords=matched_terms,
                 )
             )
+        LOGGER.info(
+            "CROSSREF processed: journal=%s returned=%d matched=%d window=%s~%s",
+            journal,
+            len(records),
+            matched_count,
+            start_date,
+            end_date,
+        )
     return items

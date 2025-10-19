@@ -60,7 +60,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if total_fetched == 0:
         LOGGER.info("No data fetched from any source")
         if runtime.force_send_summary and not runtime.dry_run:
-            summary = _build_summary(runtime, fetch_counts, {}, {}, FilterStats(total=0, matched=0, unique=0))
+            summary = _build_summary(
+                runtime,
+                fetch_counts,
+                {},
+                {},
+                FilterStats(post_fetch=0, post_keyword=0, post_dedup=0),
+                post_seen=0,
+            )
             _send_summary_email({}, config, runtime, window_start_dt, window_end_dt, summary)
             return {"status": "no_data", "summary_email": True}
         return {"status": "no_data"}
@@ -68,14 +75,21 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     filtered_items, filter_stats = filter_items(fetched_items, runtime.keywords, runtime.match_mode)
     filtered_counts = {source: len(items) for source, items in filtered_items.items()}
     LOGGER.info(
-        "POST-FILTER stats: total=%d matched=%d deduped=%d",
-        filter_stats.total,
-        filter_stats.matched,
-        filter_stats.unique,
+        "POST-FILTER stats: post_fetch=%d post_keyword=%d post_dedup=%d",
+        filter_stats.post_fetch,
+        filter_stats.post_keyword,
+        filter_stats.post_dedup,
     )
     if not any(filtered_counts.values()):
         if runtime.force_send_summary and not runtime.dry_run:
-            summary = _build_summary(runtime, fetch_counts, filtered_counts, {}, filter_stats)
+            summary = _build_summary(
+                runtime,
+                fetch_counts,
+                filtered_counts,
+                {},
+                filter_stats,
+                post_seen=0,
+            )
             _send_summary_email({}, config, runtime, window_start_dt, window_end_dt, summary)
             return {"status": "no_matches", "summary_email": True}
         LOGGER.info("No items matched keyword filters")
@@ -86,8 +100,23 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     new_counts = {source: len(items) for source, items in new_items.items()}
     new_total = sum(new_counts.values())
     LOGGER.info("POST-FILTER seen check: new=%d", new_total)
+    LOGGER.info(
+        "SUMMARY counts: pre_fetch=%d post_fetch=%d post_keyword=%d post_dedup=%d post_seen=%d",
+        total_fetched,
+        filter_stats.post_fetch,
+        filter_stats.post_keyword,
+        filter_stats.post_dedup,
+        new_total,
+    )
 
-    summary = _build_summary(runtime, fetch_counts, filtered_counts, new_counts, filter_stats)
+    summary = _build_summary(
+        runtime,
+        fetch_counts,
+        filtered_counts,
+        new_counts,
+        filter_stats,
+        post_seen=new_total,
+    )
 
     if new_total == 0:
         if runtime.force_send_summary and not runtime.dry_run:
@@ -186,6 +215,7 @@ def _build_summary(
     filtered_counts: Mapping[str, int],
     new_counts: Mapping[str, int],
     filter_stats: FilterStats,
+    post_seen: int,
 ) -> Dict[str, Any]:
     return {
         "sources": list(runtime.sources),
@@ -195,11 +225,7 @@ def _build_summary(
         "fetch_counts": dict(fetch_counts),
         "filtered_counts": dict(filtered_counts),
         "new_counts": dict(new_counts),
-        "filter_stats": {
-            "total": filter_stats.total,
-            "matched": filter_stats.matched,
-            "unique": filter_stats.unique,
-        },
+        "filter_stats": filter_stats.as_dict(post_seen=post_seen),
     }
 
 

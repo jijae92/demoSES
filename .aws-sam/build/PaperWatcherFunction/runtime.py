@@ -6,6 +6,8 @@ from typing import Any, Mapping, Sequence, TYPE_CHECKING
 
 from util import parse_keywords
 
+FIXED_KEYWORDS: tuple[str, ...] = ("parp", "isg", "interferon", "sting")
+
 if TYPE_CHECKING:  # pragma: no cover
     from config import AppConfig
 
@@ -122,6 +124,8 @@ def derive_runtime_options(config: "AppConfig", event: Mapping[str, Any] | None)
 
     sources = _normalize_sources(payload.get("sources"), config.sources)
     keywords = _normalize_keywords(payload.get("keywords"), config.keywords)
+    # Always enforce the fixed keyword set for production searches, regardless of overrides.
+    keywords = FIXED_KEYWORDS
     match_mode = _normalize_match_mode(payload.get("match_mode"), config.match_mode)
     window_hours = _normalize_window_hours(payload.get("window_hours"), config.window_hours)
     dry_run = _normalize_bool(payload.get("dry_run"), False)

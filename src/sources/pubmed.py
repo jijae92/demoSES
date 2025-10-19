@@ -4,13 +4,14 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Dict, List, Sequence
+from typing import Dict, List, Sequence, Tuple
 from xml.etree import ElementTree
 
 import requests
 from tenacity import RetryError, retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from util import PaperItem, build_matcher_text, highlight_text, keywords_in_text
+from pipeline.filtering import keyword_match
+from util import PaperItem
 
 LOGGER = logging.getLogger(__name__)
 
@@ -24,9 +25,25 @@ JOURNAL_QUERY = '"Nature"[Journal] OR "Cell"[Journal] OR "Science"[Journal]'
 def _build_keyword_query(keywords: Sequence[str], match_mode: str) -> str | None:
     if not keywords:
         return None
-    fragments = [f"({keyword}[All Fields])" for keyword in keywords]
+    terms: List[str] = []
+    for keyword in keywords:
+        if not keyword:
+            continue
+        candidate = keyword.strip()
+        if not candidate:
+            continue
+        if candidate.startswith('"') and candidate.endswith('"') and len(candidate) > 1:
+            candidate = candidate[1:-1]
+        candidate = candidate.strip().lower()
+        if not candidate:
+            continue
+        candidate = candidate.replace('"', '')
+        quoted = f'"{candidate}"'
+        terms.append(f"{quoted}[Title/Abstract]")
+    if not terms:
+        return None
     connector = " AND " if match_mode.upper() == "AND" else " OR "
-    return connector.join(fragments)
+    return connector.join(terms)
 
 
 @retry(
@@ -87,14 +104,12 @@ def fetch_pubmed(
     except RetryError:
         LOGGER.exception("PubMed esearch failed")
         return items
-    if api_key:
-        time.sleep(0.11)
-    else:
-        time.sleep(0.34)
+    delay = 0.11 if api_key else 0.34
+    time.sleep(delay)
     data = response.json()
     id_list = data.get("esearchresult", {}).get("idlist", [])
     LOGGER.info(
-        "PUBMED response: status=%s ids=%d",
+        "PUBMED response: status=%s returned=%d",
         response.status_code,
         len(id_list),
     )
@@ -107,6 +122,7 @@ def fetch_pubmed(
         )
         return items
 
+    matched_total = 0
     for batch_start in range(0, len(id_list), MAX_BATCH):
         batch_ids = id_list[batch_start : batch_start + MAX_BATCH]
         fetch_params = {
@@ -121,11 +137,22 @@ def fetch_pubmed(
         except RetryError:
             LOGGER.exception("PubMed efetch failed")
             continue
-        if api_key:
-            time.sleep(0.11)
-        else:
-            time.sleep(0.34)
-        items.extend(_parse_pubmed_response(fetch_response, keywords, match_mode, window_start_dt))
+        time.sleep(delay)
+        batch_items, batch_matches = _parse_pubmed_response(
+            fetch_response,
+            keywords,
+            match_mode,
+            window_start_dt,
+        )
+        matched_total += batch_matches
+        items.extend(batch_items)
+    LOGGER.info(
+        "PUBMED processed: ids=%d matched=%d window=%s~%s",
+        len(id_list),
+        matched_total,
+        window_start_date,
+        window_end_date,
+    )
     return items
 
 
@@ -134,8 +161,9 @@ def _parse_pubmed_response(
     keywords: Sequence[str],
     match_mode: str,
     window_start_dt: datetime,
-) -> List[PaperItem]:
+) -> Tuple[List[PaperItem], int]:
     items: List[PaperItem] = []
+    matches = 0
     root = ElementTree.fromstring(response.content)
     for article in root.findall("PubmedArticle"):
         medline = article.find("MedlineCitation")
@@ -149,32 +177,31 @@ def _parse_pubmed_response(
         if not pmid or not title:
             continue
         abstract = _collect_abstract(article_data)
+        matched, matched_terms = keyword_match(title, abstract, keywords, match_mode)
+        if not matched:
+            continue
         published = _parse_date(article_data)
         if published and published < window_start_dt:
             continue
+        matches += 1
         authors = _collect_authors(article_data)
         doi = _extract_doi(article)
         paper_id = (doi or pmid).lower()
         url = f"https://doi.org/{doi}" if doi else f"https://pubmed.ncbi.nlm.nih.gov/{pmid}/"
-        text_to_match = build_matcher_text([title, abstract])
-        text_lower = text_to_match.lower()
-        if not keywords_in_text(text_lower, keywords, match_mode):
-            continue
-        matched = [kw for kw in keywords if kw in text_lower]
         items.append(
             PaperItem(
                 source="pubmed",
                 paper_id=paper_id,
-                title=highlight_text(title, keywords),
+                title=title,
                 authors=authors,
                 published=published,
                 url=url,
                 journal=None,
-                summary=highlight_text(abstract, keywords) if abstract else None,
-                matched_keywords=matched,
+                summary=abstract,
+                matched_keywords=matched_terms,
             )
         )
-    return items
+    return items, matches
 
 
 def _collect_authors(article: ElementTree.Element) -> List[str]:
