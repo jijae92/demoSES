@@ -1,0 +1,37 @@
+- id: password_reset
+  terms:
+    - "password reset"
+    - "reset password"
+    - "account recovery"
+  synonyms:
+    - "passcode reset"
+    - "credential reset"
+  typos:
+    - "passwrod reset"
+    - "password rest"
+  negative_terms:
+    - "promo"
+    - "newsletter"
+  filters:
+    has_attachment: false
+  boosts:
+    subject: 4.0
+    from_suffix:
+      - "@security."
+      - "@no-reply."
+  rerank:
+    recency_decay:
+      scale: "7d"
+      decay: 0.7
+- id: invoice
+  terms:
+    - "invoice"
+    - "receipt"
+    - "bill"
+  filters:
+    has_attachment: true
+    ext_hint:
+      - "pdf"
+      - "docx"
+  boosts:
+    subject: 3.5
