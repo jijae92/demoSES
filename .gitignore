@@ -1,0 +1,82 @@
+# Environment and Secrets
+.env
+.env.local
+
+# Data and State Directory
+.data/
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+venv/
+ENV/
+env/
+
+# AWS SAM
+.aws-sam/
+samconfig.toml
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+*.log
+logs/
+# --- Python / Build ---
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+build/
+dist/
+
+# --- Virtualenv / IDE ---
+.venv*/
+.venv/
+.vscode/
+.idea/
+
+# --- Local secrets / env ---
+.env
+.secrets/
+aws.env
+*.log
+
+# --- OS noise ---
+.DS_Store
+Thumbs.db
