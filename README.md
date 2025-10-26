@@ -88,3 +88,12 @@ Environment variables are configured within `template.yaml` and can be overridde
 2. `sam deploy --guided`
 3. (배포 후) EventBridge 스케줄 또는 Lambda 콘솔 테스트로 실행 확인
 
+## Development Checklist
+
+다음 단계 작업 목록:
+
+- [ ] 설정/비밀(키워드/수신자/크롤러 공급자/API키) 정의
+- [ ] 크롤러/중복제거/발송 모듈 추가
+- [ ] 하루 1회 스케줄(GitHub Actions)
+- [ ] 테스트/모의(HTTP, SES)
+
