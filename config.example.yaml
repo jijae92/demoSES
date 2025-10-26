@@ -1,0 +1,34 @@
+# Paper Watcher Configuration
+# This file defines the keyword search parameters, data sources, and email settings
+
+# Keywords to search for in papers (case-insensitive)
+keywords:
+  - "parp"
+  - "isg"
+  - "interferon"
+  - "sting"
+
+# Search provider: "bing" for Bing Search API, "http" for direct URL crawling
+provider: "http"
+
+# Source URLs (only used when provider="http")
+sources:
+  - "https://www.nature.com/nature/articles"
+  - "https://www.cell.com/cell/current"
+  - "https://www.science.org/toc/science/current"
+
+# Minimum number of results required to send email (set to 0 to always send)
+min_results: 1
+
+# Deduplication window in days (papers seen within this window won't be re-sent)
+dedup_window_days: 14
+
+# Timezone for scheduling and date formatting
+timezone: "Asia/Seoul"
+
+# Email configuration
+email:
+  from: "jijae92@gmail.com"
+  to:
+    - "jws0408@naver.com"
+  subject_prefix: "[Daily Keyword Alerts]"
