@@ -19,7 +19,20 @@ ESEARCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi"
 EFETCH_URL = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi"
 DEFAULT_TIMEOUT = 10
 MAX_BATCH = 200
-JOURNAL_QUERY = '"Nature"[Journal] OR "Cell"[Journal] OR "Science"[Journal]'
+# Filter to Nature, Cell, Science and their family journals (23 total)
+JOURNAL_QUERY = (
+    # Nature family (9)
+    '"Nature"[Journal] OR "Nature Medicine"[Journal] OR "Nature Immunology"[Journal] OR '
+    '"Nature Biotechnology"[Journal] OR "Nature Genetics"[Journal] OR "Nature Cancer"[Journal] OR '
+    '"Nature Communications"[Journal] OR "Nature Cell Biology"[Journal] OR "Nature Chemical Biology"[Journal] OR '
+    # Cell family (9)
+    '"Cell"[Journal] OR "Cell Reports"[Journal] OR "Immunity"[Journal] OR '
+    '"Cancer Cell"[Journal] OR "Molecular Cell"[Journal] OR "Cell Genomics"[Journal] OR '
+    '"Trends in Cancer"[Journal] OR "Trends in Genetics"[Journal] OR "Trends in Immunology"[Journal] OR '
+    # Science family (5)
+    '"Science"[Journal] OR "Science Immunology"[Journal] OR "Science Signaling"[Journal] OR '
+    '"Science Advances"[Journal] OR "Science Translational Medicine"[Journal]'
+)
 
 
 def _build_keyword_query(keywords: Sequence[str], match_mode: str) -> str | None:
@@ -80,15 +93,17 @@ def fetch_pubmed(
     window_end_date = window_end_dt.strftime("%Y/%m/%d")
 
     items: List[PaperItem] = []
-    term_components = [JOURNAL_QUERY]
+    term_components = []
+    if JOURNAL_QUERY:
+        term_components.append(JOURNAL_QUERY)
     if keyword_query:
         term_components.append(f"({keyword_query})")
-    term = " AND ".join(term_components)
+    term = " AND ".join(term_components) if term_components else keyword_query or ""
 
     params = {
         **params_base,
         "term": term,
-        "datetype": "pubdate",
+        "datetype": "pdat",  # Fixed: use 'pdat' for publication date
         "mindate": window_start_date,
         "maxdate": window_end_date,
     }

@@ -15,10 +15,34 @@ from util import PaperItem
 
 LOGGER = logging.getLogger(__name__)
 
+# RSS feeds for Nature, Cell, Science and their family journals (23 total)
 FEEDS = {
+    # Nature family (9)
     "Nature": "https://www.nature.com/nature.rss",
+    "Nature Medicine": "https://www.nature.com/nm.rss",
+    "Nature Immunology": "https://www.nature.com/ni.rss",
+    "Nature Biotechnology": "https://www.nature.com/nbt.rss",
+    "Nature Genetics": "https://www.nature.com/ng.rss",
+    "Nature Cancer": "https://www.nature.com/ncancer.rss",
+    "Nature Communications": "https://www.nature.com/ncomms.rss",
+    "Nature Cell Biology": "https://www.nature.com/ncb.rss",
+    "Nature Chemical Biology": "https://www.nature.com/nchembio.rss",
+    # Cell family (9)
     "Cell": "https://www.cell.com/cell/current.rss",
+    "Cell Reports": "https://www.cell.com/cell-reports/current.rss",
+    "Immunity": "https://www.cell.com/immunity/current.rss",
+    "Cancer Cell": "https://www.cell.com/cancer-cell/current.rss",
+    "Molecular Cell": "https://www.cell.com/molecular-cell/current.rss",
+    "Cell Genomics": "https://www.cell.com/cell-genomics/current.rss",
+    "Trends in Cancer": "https://www.cell.com/trends/cancer/current.rss",
+    "Trends in Genetics": "https://www.cell.com/trends/genetics/current.rss",
+    "Trends in Immunology": "https://www.cell.com/trends/immunology/current.rss",
+    # Science family (5)
     "Science": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=science",
+    "Science Immunology": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=sciimmunol",
+    "Science Signaling": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=signaling",
+    "Science Advances": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=sciadv",
+    "Science Translational Medicine": "https://www.science.org/action/showFeed?type=etoc&feed=rss&jc=stm",
 }
 DEFAULT_TIMEOUT = 10
 

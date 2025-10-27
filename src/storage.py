@@ -165,13 +165,7 @@ class SeenStorage:
             return False
 
         try:
-            seen_at = datetime.fromisoformat(seen_at_str)
-            cutoff_time = datetime.now(timezone.utc) - timedelta(days=self.dedup_window_days)
-
-            if seen_at < cutoff_time:
-                logger.debug(f"Record expired (seen {self.dedup_window_days}+ days ago): {item.url}")
-                return False
-
+            # 영구 중복 제거: 날짜 상관없이 한 번 본 논문은 절대 다시 안 보냄
             logger.debug(f"Item already seen: {item.url}")
             return True
 
@@ -210,40 +204,13 @@ class SeenStorage:
         """
         Remove records older than the dedup window.
 
+        영구 중복 제거 모드: 이 메서드는 아무 작업도 하지 않습니다.
+
         Returns:
-            Number of records removed
+            Number of records removed (always 0)
         """
-        seen_items = self.load_seen()
-        cutoff_time = datetime.now(timezone.utc) - timedelta(days=self.dedup_window_days)
-
-        original_count = len(seen_items)
-        cleaned_items = {}
-
-        for item_hash, record in seen_items.items():
-            seen_at_str = record.get("seen_at")
-
-            if not seen_at_str:
-                logger.warning(f"Skipping record with missing timestamp: {item_hash}")
-                continue
-
-            try:
-                seen_at = datetime.fromisoformat(seen_at_str)
-
-                if seen_at >= cutoff_time:
-                    cleaned_items[item_hash] = record
-
-            except Exception as e:
-                logger.error(f"Failed to parse timestamp for {item_hash}: {e}")
-
-        removed_count = original_count - len(cleaned_items)
-
-        if removed_count > 0:
-            self.save_seen(cleaned_items)
-            logger.info(f"Cleaned up {removed_count} old records (kept {len(cleaned_items)})")
-        else:
-            logger.debug("No old records to clean up")
-
-        return removed_count
+        logger.debug("Cleanup disabled: Permanent deduplication mode enabled")
+        return 0
 
     def reset_state(self) -> None:
         """

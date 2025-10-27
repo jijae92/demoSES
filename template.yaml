@@ -37,12 +37,14 @@ Globals:
         KEYWORDS: "parp, isg, interferon, sting"
         MATCH_MODE: "OR"
         WINDOW_HOURS: "24"
-        SOURCES: "crossref,pubmed,rss"
+        SOURCES: "pubmed,crossref,rss"
         APP_NAME: paper-watcher
         DDB_TABLE: !Ref TableName
         SES_SECRET_NAME: !Ref SesSecretName
         API_SECRET_NAME: !Ref ApiSecretName
         USE_SMTP: !Ref UseSmtp
+        # Nature (9) + Cell (9) + Science (5) = 23 journals total
+        JOURNAL_FILTER: "nature,cell,science,trends"
 
 Resources:
   PaperWatcherFunction:

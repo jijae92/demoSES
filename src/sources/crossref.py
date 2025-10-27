@@ -15,7 +15,35 @@ from util import PaperItem
 LOGGER = logging.getLogger(__name__)
 
 CROSSREF_URL = "https://api.crossref.org/works"
-JOURNALS = ["Nature", "Cell", "Science"]
+# Nature, Cell, Science and their family journals (23 total)
+JOURNALS = [
+    # Nature family (9)
+    "Nature",
+    "Nature Medicine",
+    "Nature Immunology",
+    "Nature Biotechnology",
+    "Nature Genetics",
+    "Nature Cancer",
+    "Nature Communications",
+    "Nature Cell Biology",
+    "Nature Chemical Biology",
+    # Cell family (9)
+    "Cell",
+    "Cell Reports",
+    "Immunity",
+    "Cancer Cell",
+    "Molecular Cell",
+    "Cell Genomics",
+    "Trends in Cancer",
+    "Trends in Genetics",
+    "Trends in Immunology",
+    # Science family (5)
+    "Science",
+    "Science Immunology",
+    "Science Signaling",
+    "Science Advances",
+    "Science Translational Medicine",
+]
 DEFAULT_TIMEOUT = 10
 
 
