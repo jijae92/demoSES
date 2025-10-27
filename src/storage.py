@@ -165,13 +165,27 @@ class SeenStorage:
             return False
 
         try:
-            # 영구 중복 제거: 날짜 상관없이 한 번 본 논문은 절대 다시 안 보냄
-            logger.debug(f"Item already seen: {item.url}")
-            return True
-
-        except Exception as e:
-            logger.error(f"Failed to parse seen_at timestamp: {e}")
+            seen_at = datetime.fromisoformat(seen_at_str)
+        except ValueError:
+            logger.warning(f"Invalid seen_at timestamp for hash: {item_hash}")
             return False
+
+        if seen_at.tzinfo is None:
+            seen_at = seen_at.replace(tzinfo=timezone.utc)
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.dedup_window_days)
+        if seen_at < cutoff:
+            logger.debug(f"Seen record expired for: {item.url}")
+            # Drop the expired record to keep storage tidy.
+            del seen_items[item_hash]
+            try:
+                self.save_seen(seen_items)
+            except Exception:
+                logger.exception("Failed to persist storage after pruning expired record")
+            return False
+
+        logger.debug(f"Item already seen within TTL: {item.url}")
+        return True
 
     def mark_seen(self, items: list[ResultItem]) -> None:
         """
@@ -204,13 +218,39 @@ class SeenStorage:
         """
         Remove records older than the dedup window.
 
-        영구 중복 제거 모드: 이 메서드는 아무 작업도 하지 않습니다.
-
         Returns:
-            Number of records removed (always 0)
+            Number of records removed
         """
-        logger.debug("Cleanup disabled: Permanent deduplication mode enabled")
-        return 0
+        seen_items = self.load_seen()
+        if not seen_items:
+            return 0
+
+        cutoff = datetime.now(timezone.utc) - timedelta(days=self.dedup_window_days)
+        removed_keys: list[str] = []
+
+        for item_hash, record in list(seen_items.items()):
+            seen_at_str = record.get("seen_at")
+            if not seen_at_str:
+                removed_keys.append(item_hash)
+                continue
+            try:
+                seen_at = datetime.fromisoformat(seen_at_str)
+            except ValueError:
+                removed_keys.append(item_hash)
+                continue
+            if seen_at.tzinfo is None:
+                seen_at = seen_at.replace(tzinfo=timezone.utc)
+            if seen_at < cutoff:
+                removed_keys.append(item_hash)
+
+        for key in removed_keys:
+            seen_items.pop(key, None)
+
+        if removed_keys:
+            self.save_seen(seen_items)
+            logger.info(f"Removed {len(removed_keys)} expired seen records")
+
+        return len(removed_keys)
 
     def reset_state(self) -> None:
         """

@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
+from os import getenv
 from typing import Dict, List, Sequence
 
 import requests
@@ -45,6 +46,9 @@ JOURNALS = [
     "Science Translational Medicine",
 ]
 DEFAULT_TIMEOUT = 10
+# Limit the number of journals queried per run to keep request volume manageable.
+# The value can be overridden with the CROSSREF_JOURNAL_LIMIT environment variable.
+DEFAULT_JOURNAL_LIMIT = 3
 
 
 class RateLimitError(Exception):
@@ -162,6 +166,20 @@ def _mask_params(params: Dict[str, str]) -> Dict[str, str]:
     return masked
 
 
+def _resolve_journal_limit(override: int | None) -> int | None:
+    if override is not None:
+        return override if override > 0 else None
+    env_value = getenv("CROSSREF_JOURNAL_LIMIT")
+    if not env_value:
+        return DEFAULT_JOURNAL_LIMIT
+    try:
+        parsed = int(env_value)
+    except ValueError:
+        LOGGER.warning("Invalid CROSSREF_JOURNAL_LIMIT value: %s", env_value)
+        return DEFAULT_JOURNAL_LIMIT
+    return parsed if parsed > 0 else None
+
+
 def fetch_crossref(
     keywords: Sequence[str],
     match_mode: str,
@@ -169,6 +187,8 @@ def fetch_crossref(
     window_end_dt: datetime,
     user_agent: str,
     contact_email: str | None,
+    *,
+    max_journals: int | None = None,
 ) -> List[PaperItem]:
     """Fetch papers from Crossref honoring the configured filters."""
     session = requests.Session()
@@ -183,7 +203,10 @@ def fetch_crossref(
     keyword_query = _build_query(keywords)
     items: List[PaperItem] = []
 
-    for journal in JOURNALS:
+    limit = _resolve_journal_limit(max_journals)
+    selected_journals = JOURNALS if limit is None else JOURNALS[:limit]
+
+    for journal in selected_journals:
         matched_count = 0
         params = {
             "filter": ",".join(
