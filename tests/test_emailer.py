@@ -354,6 +354,17 @@ def test_emailer_environment_variables():
         assert emailer.smtp_password == 'testpass'
 
 
+def test_emailer_blank_env_port_defaults_to_587():
+    """Blank SMTP_PORT environment variables should fall back to default."""
+    with patch.dict('os.environ', {'SMTP_PORT': ''}):
+        emailer = Emailer(
+            sender="from@example.com",
+            recipients=["to@example.com"]
+        )
+
+        assert emailer.smtp_port == 587
+
+
 # ========== Integration Tests ==========
 
 @patch('src.emailer.boto3')

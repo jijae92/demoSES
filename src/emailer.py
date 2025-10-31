@@ -15,9 +15,12 @@ from typing import Any
 try:
     import boto3
     from botocore.exceptions import ClientError, NoCredentialsError
-    BOTO3_AVAILABLE = True
-except ImportError:
-    BOTO3_AVAILABLE = False
+except ImportError:  # pragma: no cover - exercised via tests
+    boto3 = None  # type: ignore[assignment]
+    ClientError = NoCredentialsError = Exception  # type: ignore[assignment]
+
+# Optional toggle that tests (and callers) can override.
+BOTO3_AVAILABLE: bool | None = None
 
 from src.crawler.interface import ResultItem
 
@@ -208,7 +211,7 @@ class Emailer:
         subject_prefix: str = "[Paper Watcher]",
         aws_region: str | None = None,
         smtp_host: str | None = None,
-        smtp_port: int | None = None,
+        smtp_port: int | str | None = None,
         smtp_user: str | None = None,
         smtp_password: str | None = None,
         use_tls: bool = True,
@@ -236,10 +239,24 @@ class Emailer:
 
         # SMTP configuration
         self.smtp_host = smtp_host or os.getenv("SMTP_HOST")
-        if smtp_port:
-            self.smtp_port = smtp_port
-        else:
-            self.smtp_port = int(os.getenv("SMTP_PORT", "587"))
+
+        def _resolve_smtp_port(value: int | str | None) -> int:
+            """Derive SMTP port with sensible defaults."""
+            if value is None:
+                return 587
+            if isinstance(value, int):
+                return value
+            candidate = value.strip()
+            if not candidate:
+                return 587
+            try:
+                return int(candidate)
+            except ValueError as exc:
+                raise ValueError(f"Invalid SMTP port value: {value!r}") from exc
+
+        env_smtp_port: str | None = os.getenv("SMTP_PORT")
+        resolved_port_source: int | str | None = smtp_port if smtp_port is not None else env_smtp_port
+        self.smtp_port = _resolve_smtp_port(resolved_port_source)
         self.smtp_user = smtp_user or os.getenv("SMTP_USER")
         self.smtp_password = smtp_password or os.getenv("SMTP_PASSWORD")
         self.use_tls = use_tls
@@ -279,7 +296,7 @@ class Emailer:
         logger.info(f"Sending email: {subject}")
 
         # Try SES first, then SMTP
-        if BOTO3_AVAILABLE:
+        if self._ses_enabled():
             try:
                 return self._send_via_ses(subject, html_body)
             except Exception as e:
@@ -310,7 +327,7 @@ class Emailer:
         Raises:
             Exception: If SES delivery fails
         """
-        if not BOTO3_AVAILABLE:
+        if not self._ses_enabled():
             raise ImportError("boto3 is not installed")
 
         logger.debug(f"Sending via SES (region: {self.aws_region})")
@@ -402,3 +419,17 @@ class Emailer:
         except Exception as e:
             logger.error(f"SMTP delivery failed: {e}")
             raise
+
+    @staticmethod
+    def _ses_enabled() -> bool:
+        """
+        Determine whether SES sending is enabled and boto3 is present.
+
+        Returns:
+            True when boto3 is available and the feature toggle allows usage.
+        """
+        if boto3 is None:
+            return False
+        if isinstance(BOTO3_AVAILABLE, bool):
+            return BOTO3_AVAILABLE
+        return True
